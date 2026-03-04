@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.1"
+VERSION="0.1.2"
 
 EXIT_OK=0
 EXIT_RUNTIME=1
@@ -1004,9 +1004,18 @@ cmd_backup() {
   done
 
   [ -n "$vm" ] || { err "--vm is required."; usage_backup; return "$EXIT_USAGE"; }
-  is_uint "$keep" && [ "$keep" -ge 1 ] || { err "--keep must be >= 1."; return "$EXIT_USAGE"; }
-  is_uint "$UTM_STOP_TIMEOUT_SEC" && [ "$UTM_STOP_TIMEOUT_SEC" -ge 1 ] || { err "--timeout must be >= 1."; return "$EXIT_USAGE"; }
-  is_uint "$UTM_STOP_POLL_INTERVAL_SEC" && [ "$UTM_STOP_POLL_INTERVAL_SEC" -ge 1 ] || { err "--poll must be >= 1."; return "$EXIT_USAGE"; }
+  if ! is_uint "$keep" || [ "$keep" -lt 1 ]; then
+    err "--keep must be >= 1."
+    return "$EXIT_USAGE"
+  fi
+  if ! is_uint "$UTM_STOP_TIMEOUT_SEC" || [ "$UTM_STOP_TIMEOUT_SEC" -lt 1 ]; then
+    err "--timeout must be >= 1."
+    return "$EXIT_USAGE"
+  fi
+  if ! is_uint "$UTM_STOP_POLL_INTERVAL_SEC" || [ "$UTM_STOP_POLL_INTERVAL_SEC" -lt 1 ]; then
+    err "--poll must be >= 1."
+    return "$EXIT_USAGE"
+  fi
 
   case "$mode" in
     auto|snapshot|archive) ;;
@@ -1080,8 +1089,14 @@ cmd_restore() {
 
   [ -n "$vm" ] || { err "--vm is required."; usage_restore; return "$EXIT_USAGE"; }
   [ -n "$source" ] || { err "--source is required."; usage_restore; return "$EXIT_USAGE"; }
-  is_uint "$UTM_STOP_TIMEOUT_SEC" && [ "$UTM_STOP_TIMEOUT_SEC" -ge 1 ] || { err "--timeout must be >= 1."; return "$EXIT_USAGE"; }
-  is_uint "$UTM_STOP_POLL_INTERVAL_SEC" && [ "$UTM_STOP_POLL_INTERVAL_SEC" -ge 1 ] || { err "--poll must be >= 1."; return "$EXIT_USAGE"; }
+  if ! is_uint "$UTM_STOP_TIMEOUT_SEC" || [ "$UTM_STOP_TIMEOUT_SEC" -lt 1 ]; then
+    err "--timeout must be >= 1."
+    return "$EXIT_USAGE"
+  fi
+  if ! is_uint "$UTM_STOP_POLL_INTERVAL_SEC" || [ "$UTM_STOP_POLL_INTERVAL_SEC" -lt 1 ]; then
+    err "--poll must be >= 1."
+    return "$EXIT_USAGE"
+  fi
 
   require_dependencies || return "$?"
   do_restore_for_vm_and_source "$vm" "$source" "$assume_yes"

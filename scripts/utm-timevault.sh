@@ -8,6 +8,7 @@ EXIT_RUNTIME=1
 EXIT_USAGE=2
 EXIT_DEPS=3
 EXIT_TIMEOUT=4
+EXIT_CANCEL=130
 
 OS_UNAME="$(uname -s 2>/dev/null || echo unknown)"
 case "$OS_UNAME" in
@@ -651,30 +652,36 @@ pick_vm_interactive() {
     return "$EXIT_RUNTIME"
   fi
 
-  echo "Select VM:"
+  echo "Select VM:" >&2
   i=1
   while [ "$i" -le "$count" ]; do
-    echo "  [$i] ${vms[$((i-1))]}"
+    echo "  [$i] ${vms[$((i-1))]}" >&2
     i=$((i+1))
   done
-  echo "  [0] Cancel"
+  echo "  [0] Cancel" >&2
 
-  read -r -p "> " sel
-  if ! is_uint "$sel"; then
-    err "Invalid selection."
-    return "$EXIT_USAGE"
-  fi
+  while true; do
+    if ! read -r -p "> " sel; then
+      return "$EXIT_CANCEL"
+    fi
 
-  if [ "$sel" -eq 0 ]; then
-    return "$EXIT_RUNTIME"
-  fi
+    if ! is_uint "$sel"; then
+      err "Invalid selection."
+      continue
+    fi
 
-  if [ "$sel" -gt "$count" ]; then
-    err "Invalid selection."
-    return "$EXIT_USAGE"
-  fi
+    if [ "$sel" -eq 0 ]; then
+      return "$EXIT_CANCEL"
+    fi
 
-  echo "${vms[$((sel-1))]%.utm}"
+    if [ "$sel" -gt "$count" ]; then
+      err "Invalid selection."
+      continue
+    fi
+
+    echo "${vms[$((sel-1))]%.utm}"
+    return "$EXIT_OK"
+  done
 }
 
 pick_backup_interactive() {
@@ -687,7 +694,7 @@ pick_backup_interactive() {
     return "$EXIT_RUNTIME"
   fi
 
-  echo "Available backups (newest first):"
+  echo "Available backups (newest first):" >&2
   i=1
   printf "%s\n" "$backups" | while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -697,28 +704,34 @@ pick_backup_interactive() {
       kind="archive"
     fi
     size="$(human_size_path "$f")"
-    printf "  [%d] %s [%s] (%s)\n" "$i" "$(basename "$f")" "$kind" "${size:-?}"
+    printf "  [%d] %s [%s] (%s)\n" "$i" "$(basename "$f")" "$kind" "${size:-?}" >&2
     i=$((i+1))
   done
-  echo "  [0] Cancel"
+  echo "  [0] Cancel" >&2
 
   count="$(printf "%s\n" "$backups" | awk 'NF{c++} END{print c+0}')"
-  read -r -p "> " sel
-  if ! is_uint "$sel"; then
-    err "Invalid selection."
-    return "$EXIT_USAGE"
-  fi
+  while true; do
+    if ! read -r -p "> " sel; then
+      return "$EXIT_CANCEL"
+    fi
 
-  if [ "$sel" -eq 0 ]; then
-    return "$EXIT_RUNTIME"
-  fi
+    if ! is_uint "$sel"; then
+      err "Invalid selection."
+      continue
+    fi
 
-  if [ "$sel" -gt "$count" ]; then
-    err "Invalid selection."
-    return "$EXIT_USAGE"
-  fi
+    if [ "$sel" -eq 0 ]; then
+      return "$EXIT_CANCEL"
+    fi
 
-  printf "%s\n" "$backups" | awk -v n="$sel" 'NR==n{print; exit}'
+    if [ "$sel" -gt "$count" ]; then
+      err "Invalid selection."
+      continue
+    fi
+
+    printf "%s\n" "$backups" | awk -v n="$sel" 'NR==n{print; exit}'
+    return "$EXIT_OK"
+  done
 }
 
 do_backup_for_vm() {
@@ -903,7 +916,10 @@ do_restore_for_vm_and_source() {
     fi
     echo "This will overwrite VM '$vm'. Existing VM folder will be renamed to .old_<timestamp>."
     echo "Selected backup: $(basename "$source")"
-    read -r -p "Proceed? (y/N): " confirm
+    if ! read -r -p "Proceed? (y/N): " confirm; then
+      info "Restore cancelled."
+      return "$EXIT_OK"
+    fi
     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
       info "Restore cancelled."
       return "$EXIT_OK"
@@ -976,12 +992,24 @@ do_restore_for_vm_and_source() {
 }
 
 do_backup_interactive() {
-  local vm keep_in keep
+  local vm keep_in keep rc
 
-  vm="$(pick_vm_interactive)" || return "$?"
+  if vm="$(pick_vm_interactive)"; then
+    :
+  else
+    rc=$?
+    if [ "$rc" -eq "$EXIT_CANCEL" ]; then
+      info "Cancelled."
+      return "$EXIT_OK"
+    fi
+    return "$rc"
+  fi
 
   keep="$KEEP_DEFAULT"
-  read -r -p "How many backups to keep? [$KEEP_DEFAULT]: " keep_in
+  if ! read -r -p "How many backups to keep? [$KEEP_DEFAULT]: " keep_in; then
+    info "Cancelled."
+    return "$EXIT_OK"
+  fi
   keep_in="${keep_in:-$KEEP_DEFAULT}"
   if ! is_uint "$keep_in" || [ "$keep_in" -lt 1 ]; then
     err "KEEP must be a number >= 1."
@@ -993,10 +1021,29 @@ do_backup_interactive() {
 }
 
 do_restore_interactive() {
-  local vm source
+  local vm source rc
 
-  vm="$(pick_vm_interactive)" || return "$?"
-  source="$(pick_backup_interactive "$vm")" || return "$?"
+  if vm="$(pick_vm_interactive)"; then
+    :
+  else
+    rc=$?
+    if [ "$rc" -eq "$EXIT_CANCEL" ]; then
+      info "Cancelled."
+      return "$EXIT_OK"
+    fi
+    return "$rc"
+  fi
+
+  if source="$(pick_backup_interactive "$vm")"; then
+    :
+  else
+    rc=$?
+    if [ "$rc" -eq "$EXIT_CANCEL" ]; then
+      info "Cancelled."
+      return "$EXIT_OK"
+    fi
+    return "$rc"
+  fi
 
   do_restore_for_vm_and_source "$vm" "$source" "0"
 }
@@ -1022,17 +1069,25 @@ main_menu() {
     echo "  [3] List VMs"
     echo "  [4] Doctor"
     echo "  [0] Exit"
-    read -r -p "> " choice
+    if ! read -r -p "> " choice; then
+      echo
+      ok "Bye."
+      return "$EXIT_OK"
+    fi
     case "$choice" in
       1)
-        if ! do_backup_interactive; then
+        if do_backup_interactive; then
+          :
+        else
           rc=$?
           err "Backup failed with exit code $rc"
         fi
         echo
         ;;
       2)
-        if ! do_restore_interactive; then
+        if do_restore_interactive; then
+          :
+        else
           rc=$?
           err "Restore failed with exit code $rc"
         fi
@@ -1043,7 +1098,9 @@ main_menu() {
         echo
         ;;
       4)
-        if ! doctor; then
+        if doctor; then
+          :
+        else
           rc=$?
           err "Doctor returned exit code $rc"
         fi

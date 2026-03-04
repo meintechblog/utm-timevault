@@ -418,7 +418,7 @@ collect_missing_optional_tools() {
 
 require_dependencies() {
   local missing_required
-  missing_required="$(collect_missing_required_tools | awk 'NF')"
+  missing_required="$(collect_missing_required_tools || true)"
   if [ -n "$missing_required" ]; then
     err "Missing required tools:"
     printf "%s\n" "$missing_required" | while IFS= read -r tool; do
@@ -440,8 +440,8 @@ doctor() {
     warn "Official support scope is macOS. Linux is experimental."
   fi
 
-  missing_required="$(collect_missing_required_tools | awk 'NF')"
-  missing_optional="$(collect_missing_optional_tools | awk 'NF')"
+  missing_required="$(collect_missing_required_tools || true)"
+  missing_optional="$(collect_missing_optional_tools || true)"
 
   if [ -z "$missing_required" ]; then
     ok "All required tools are present."

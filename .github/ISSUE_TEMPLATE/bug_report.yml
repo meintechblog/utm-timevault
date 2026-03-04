@@ -1,0 +1,55 @@
+name: Bug Report
+description: Report a reproducible problem
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please provide enough detail to reproduce.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `utm-timevault version`
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: macOS or Linux
+      placeholder: "macOS 14"
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Exact command you executed
+      placeholder: "utm-timevault backup --vm Hulki --keep 14"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: exit_code
+    attributes:
+      label: Exit code
+      placeholder: "4"

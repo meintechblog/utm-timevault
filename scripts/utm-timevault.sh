@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 
 EXIT_OK=0
 EXIT_RUNTIME=1
@@ -263,8 +263,41 @@ list_vm_names() {
 
 utm_stop_best_effort() {
   local vm="$1"
+  local method="${2:-force}"
   if [ "$PLATFORM" = "macos" ] && has_cmd osascript; then
-    osascript - "$vm" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+    case "$method" in
+      request)
+        osascript - "$vm" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run argv
+  set vmName to item 1 of argv
+  tell application "UTM"
+    stop (first virtual machine whose name is vmName) by request
+  end tell
+end run
+APPLESCRIPT
+        ;;
+      force)
+        osascript - "$vm" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run argv
+  set vmName to item 1 of argv
+  tell application "UTM"
+    stop (first virtual machine whose name is vmName) by force
+  end tell
+end run
+APPLESCRIPT
+        ;;
+      kill)
+        osascript - "$vm" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run argv
+  set vmName to item 1 of argv
+  tell application "UTM"
+    stop (first virtual machine whose name is vmName) by kill
+  end tell
+end run
+APPLESCRIPT
+        ;;
+      *)
+        osascript - "$vm" >/dev/null 2>&1 <<'APPLESCRIPT' || true
 on run argv
   set vmName to item 1 of argv
   tell application "UTM"
@@ -272,6 +305,8 @@ on run argv
   end tell
 end run
 APPLESCRIPT
+        ;;
+    esac
   fi
 }
 
@@ -339,6 +374,22 @@ wait_for_vm_status() {
 
     sleep "$poll_interval"
   done
+}
+
+stop_vm_with_graceful_fallback() {
+  local vm="$1"
+  local timeout="${2:-$UTM_STOP_TIMEOUT_SEC}"
+  local poll_interval="${3:-$UTM_STOP_POLL_INTERVAL_SEC}"
+
+  info "Requesting graceful guest shutdown: $vm"
+  utm_stop_best_effort "$vm" "request"
+  if wait_for_vm_status "$vm" "stopped" "$timeout" "$poll_interval"; then
+    return "$EXIT_OK"
+  fi
+
+  warn "Graceful shutdown timed out. Escalating to force stop: $vm"
+  utm_stop_best_effort "$vm" "force"
+  wait_for_vm_status "$vm" "stopped" "$timeout" "$poll_interval"
 }
 
 restore_vm_state_if_needed() {
@@ -585,11 +636,7 @@ do_backup_for_vm() {
     info "VM was not running before backup (status: ${vm_status_before:-unknown})."
   fi
 
-  info "Stopping VM (best effort): $vm"
-  utm_stop_best_effort "$vm"
-
-  info "Waiting for VM status 'stopped' (timeout ${UTM_STOP_TIMEOUT_SEC}s)..."
-  if ! wait_for_vm_status "$vm" "stopped" "$UTM_STOP_TIMEOUT_SEC" "$UTM_STOP_POLL_INTERVAL_SEC"; then
+  if ! stop_vm_with_graceful_fallback "$vm" "$UTM_STOP_TIMEOUT_SEC" "$UTM_STOP_POLL_INTERVAL_SEC"; then
     return "$?"
   fi
 
@@ -745,11 +792,7 @@ do_restore_for_vm_and_source() {
     fi
   fi
 
-  info "Stopping VM (best effort): $vm"
-  utm_stop_best_effort "$vm"
-
-  info "Waiting for VM status 'stopped' (timeout ${UTM_STOP_TIMEOUT_SEC}s)..."
-  if ! wait_for_vm_status "$vm" "stopped" "$UTM_STOP_TIMEOUT_SEC" "$UTM_STOP_POLL_INTERVAL_SEC"; then
+  if ! stop_vm_with_graceful_fallback "$vm" "$UTM_STOP_TIMEOUT_SEC" "$UTM_STOP_POLL_INTERVAL_SEC"; then
     return "$?"
   fi
 

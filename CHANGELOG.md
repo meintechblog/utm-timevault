@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-03-04
+
+### Changed
+
+- VM stop strategy now requests graceful guest shutdown first (`request`) and escalates to force stop only if shutdown times out.
+
 ## [0.1.0] - 2026-03-04
 
 ### Added

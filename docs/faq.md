@@ -7,7 +7,7 @@
 
 ## Does it always stop the VM first?
 
-Yes. Backup and restore attempt VM stop, then poll for `stopped` before file operations.
+Yes. Backup and restore request graceful guest shutdown first, then poll for `stopped`. If graceful stop times out, the tool escalates to force stop.
 
 ## Will it start the VM again after backup?
 

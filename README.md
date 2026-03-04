@@ -2,7 +2,7 @@
 
 State-aware backup and restore tool for UTM virtual machines.
 
-UTM TimeVault stops your VM before backup, waits until it is really stopped, runs backup/rotation, and starts the VM again if it was running before.
+UTM TimeVault requests a graceful guest shutdown before backup, waits until the VM is really stopped, falls back to force stop only on timeout, runs backup/rotation, and starts the VM again if it was running before.
 
 ## Features
 
@@ -68,11 +68,12 @@ utm-timevault version
 
 ## Safety Model
 
-1. VM stop requested before backup/restore.
+1. Graceful VM shutdown is requested before backup/restore (`request`).
 2. Status polling blocks until VM is really `stopped`.
-3. On backup completion, VM is started again if it was running before.
-4. Start polling confirms `started`.
-5. Exit trap attempts VM state restoration even if backup fails.
+3. If graceful shutdown times out, force stop is used as fallback.
+4. On backup completion, VM is started again if it was running before.
+5. Start polling confirms `started`.
+6. Exit trap attempts VM state restoration even if backup fails.
 
 ## Documentation
 

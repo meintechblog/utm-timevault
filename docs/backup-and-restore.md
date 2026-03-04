@@ -5,12 +5,13 @@
 When you run `backup`, UTM TimeVault:
 
 1. Reads the current VM state.
-2. Stops the VM (best effort).
-3. Polls until status is `stopped` (or timeout).
-4. Creates snapshot or archive backup.
-5. Applies rotation (`--keep`).
-6. Starts VM again if it was running before.
-7. Polls until status is `started`.
+2. Requests graceful shutdown (`stop ... by request`).
+3. Polls until status is `stopped`.
+4. If graceful shutdown times out, escalates to force stop (`stop ... by force`) and polls again.
+5. Creates snapshot or archive backup.
+6. Applies rotation (`--keep`).
+7. Starts VM again if it was running before.
+8. Polls until status is `started`.
 
 ## Backup Examples
 
@@ -42,7 +43,7 @@ utm-timevault backup --vm "Hulki" --backup-dir "/Volumes/Backup/utm" --utm-docs-
 
 When you run `restore`, UTM TimeVault:
 
-1. Stops VM (best effort).
+1. Requests graceful VM shutdown (`request`), with force fallback on timeout.
 2. Polls until status is `stopped`.
 3. Renames existing VM folder to `.old_<timestamp>`.
 4. Restores from snapshot or archive source.

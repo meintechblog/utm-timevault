@@ -47,6 +47,18 @@ Override paths explicitly:
 utm-timevault backup --vm "Hulki" --utm-docs-dir "$HOME/Library/Containers/com.utmapp.UTM/Data/Documents" --backup-dir "/Volumes/Backup/utm"
 ```
 
+## SMB/NAS target without hard-link support
+
+If the target filesystem does not support hard links, snapshot deduplication cannot work.
+
+Default behavior:
+
+- `HARDLINK_AUTO_FALLBACK=1` switches from `snapshot` to `archive` mode automatically.
+
+Alternative behavior:
+
+- Set `HARDLINK_AUTO_FALLBACK=0` to keep snapshot mode and only warn (expect full-copy-like growth).
+
 ## Cron job works manually but fails in cron
 
 Cron has a minimal PATH. Use absolute binary paths and explicit directories.

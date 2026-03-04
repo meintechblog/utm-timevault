@@ -8,7 +8,7 @@ UTM TimeVault requests a graceful guest shutdown before backup, waits until the 
 
 - Interactive menu for beginners
 - Scriptable CLI for cron and automation
-- Snapshot backups with `rsync` hard-link deduplication
+- Snapshot backups with `rsync` hard-link deduplication (requires hard-link support on backup target)
 - Archive backups (`.tar.zst` or `.tar.gz`) fallback
 - Global retention per VM
 - VM state restore after backup (if previously running)
@@ -65,6 +65,12 @@ utm-timevault list-backups --vm <name> [--backup-dir <path>]
 utm-timevault doctor
 utm-timevault version
 ```
+
+## Storage Target Note
+
+- Snapshot deduplication via `rsync --link-dest` only works when the backup target supports hard links.
+- Default behavior: if snapshot mode is selected but hard links are unavailable, UTM TimeVault auto-falls back to archive mode.
+- Control this via `HARDLINK_AUTO_FALLBACK` (`1` default, `0` to only warn).
 
 ## Safety Model
 

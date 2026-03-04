@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.2"
+VERSION="0.1.3"
 
 EXIT_OK=0
 EXIT_RUNTIME=1
@@ -41,6 +41,10 @@ RSYNC_SNAPSHOT_CHECKSUM="${RSYNC_SNAPSHOT_CHECKSUM:-1}"
 BACKUP_MODE="${BACKUP_MODE:-auto}" # auto|snapshot|archive
 UTM_STOP_TIMEOUT_SEC="${UTM_STOP_TIMEOUT_SEC:-120}"
 UTM_STOP_POLL_INTERVAL_SEC="${UTM_STOP_POLL_INTERVAL_SEC:-2}"
+HARDLINK_AUTO_FALLBACK="${HARDLINK_AUTO_FALLBACK:-1}"
+
+BACKUP_TARGET_HARDLINK_SUPPORT_CACHE=""
+BACKUP_TARGET_HARDLINK_CHECK_DETAIL=""
 
 VM_STATE_RESTORE_PENDING=0
 VM_STATE_RESTORE_VM=""
@@ -66,6 +70,100 @@ need_dir() {
     err "Directory not found: $1"
     return "$EXIT_RUNTIME"
   }
+}
+
+backup_target_supports_hardlinks() {
+  local probe_dir probe_src probe_link
+
+  case "${BACKUP_TARGET_HARDLINK_SUPPORT_CACHE:-}" in
+    supported) return 0 ;;
+    unsupported|uncheckable) return 1 ;;
+  esac
+
+  if [ ! -d "$BACKUP_DIR" ]; then
+    BACKUP_TARGET_HARDLINK_SUPPORT_CACHE="uncheckable"
+    BACKUP_TARGET_HARDLINK_CHECK_DETAIL="backup directory does not exist: $BACKUP_DIR"
+    return 1
+  fi
+
+  probe_dir="${BACKUP_DIR}/.utm-timevault-hardlink-check-$$-${RANDOM:-0}"
+  probe_src="${probe_dir}/src"
+  probe_link="${probe_dir}/link"
+
+  if ! mkdir -p "$probe_dir" 2>/dev/null; then
+    BACKUP_TARGET_HARDLINK_SUPPORT_CACHE="uncheckable"
+    BACKUP_TARGET_HARDLINK_CHECK_DETAIL="cannot create probe directory in backup target"
+    return 1
+  fi
+
+  if ! printf "probe\n" > "$probe_src" 2>/dev/null; then
+    rm -f "$probe_src" "$probe_link" >/dev/null 2>&1 || true
+    rmdir "$probe_dir" >/dev/null 2>&1 || true
+    BACKUP_TARGET_HARDLINK_SUPPORT_CACHE="uncheckable"
+    BACKUP_TARGET_HARDLINK_CHECK_DETAIL="cannot create probe file in backup target"
+    return 1
+  fi
+
+  if ln "$probe_src" "$probe_link" >/dev/null 2>&1; then
+    BACKUP_TARGET_HARDLINK_SUPPORT_CACHE="supported"
+    BACKUP_TARGET_HARDLINK_CHECK_DETAIL=""
+    rm -f "$probe_src" "$probe_link" >/dev/null 2>&1 || true
+    rmdir "$probe_dir" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  BACKUP_TARGET_HARDLINK_SUPPORT_CACHE="unsupported"
+  BACKUP_TARGET_HARDLINK_CHECK_DETAIL="hard links are not supported or blocked on backup target"
+  rm -f "$probe_src" "$probe_link" >/dev/null 2>&1 || true
+  rmdir "$probe_dir" >/dev/null 2>&1 || true
+  return 1
+}
+
+apply_hardlink_capability_policy() {
+  local outvar="$1"
+  local requested_kind="$2"
+  local resolved_kind="$requested_kind"
+
+  if [ "$requested_kind" != "snapshot" ]; then
+    printf -v "$outvar" "%s" "$resolved_kind"
+    return 0
+  fi
+
+  if backup_target_supports_hardlinks; then
+    printf -v "$outvar" "%s" "$resolved_kind"
+    return 0
+  fi
+
+  case "${BACKUP_TARGET_HARDLINK_SUPPORT_CACHE:-unsupported}" in
+    unsupported)
+      warn "Backup target '$BACKUP_DIR' does not support hard links. Snapshot deduplication cannot work there."
+      ;;
+    uncheckable)
+      warn "Could not verify hard-link support for '$BACKUP_DIR': ${BACKUP_TARGET_HARDLINK_CHECK_DETAIL:-unknown reason}."
+      ;;
+    *)
+      warn "Hard-link capability check returned an unknown state for '$BACKUP_DIR'."
+      ;;
+  esac
+
+  case "${HARDLINK_AUTO_FALLBACK:-1}" in
+    ''|1)
+      warn "HARDLINK_AUTO_FALLBACK=1 -> switching backup mode from snapshot to archive."
+      resolved_kind="archive"
+      ;;
+    0)
+      warn "HARDLINK_AUTO_FALLBACK=0 -> keeping snapshot mode (full-copy behavior expected)."
+      resolved_kind="snapshot"
+      ;;
+    *)
+      warn "Invalid HARDLINK_AUTO_FALLBACK='$HARDLINK_AUTO_FALLBACK'. Treating it as 1 (auto fallback enabled)."
+      warn "Switching backup mode from snapshot to archive."
+      resolved_kind="archive"
+      ;;
+  esac
+
+  printf -v "$outvar" "%s" "$resolved_kind"
+  return 0
 }
 
 usage() {
@@ -494,6 +592,24 @@ doctor() {
   missing_required="$(collect_missing_required_tools || true)"
   missing_optional="$(collect_missing_optional_tools || true)"
 
+  if backup_target_supports_hardlinks; then
+    ok "Backup target hard-link support: available."
+  else
+    case "${BACKUP_TARGET_HARDLINK_SUPPORT_CACHE:-unsupported}" in
+      unsupported)
+        warn "Backup target hard-link support: unavailable."
+        warn "Snapshot deduplication via --link-dest will not work on this target."
+        ;;
+      uncheckable)
+        warn "Backup target hard-link support: could not be verified."
+        warn "Reason: ${BACKUP_TARGET_HARDLINK_CHECK_DETAIL:-unknown reason}."
+        ;;
+      *)
+        warn "Backup target hard-link support: unknown status."
+        ;;
+    esac
+  fi
+
   if [ -z "$missing_required" ]; then
     ok "All required tools are present."
   else
@@ -666,6 +782,8 @@ do_backup_for_vm() {
     warn "Snapshot mode requested, but rsync is missing. Falling back to archive mode."
     backup_kind="archive"
   fi
+
+  apply_hardlink_capability_policy backup_kind "$backup_kind"
 
   if [ "$backup_kind" = "snapshot" ]; then
     snapshot_dir="${BACKUP_DIR}/${vm}.utm_${ts}.snapshot"

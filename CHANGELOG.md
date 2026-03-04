@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-03-04
+
+### Changed
+
+- Added hard-link capability checks for backup targets.
+- Added `HARDLINK_AUTO_FALLBACK` (default `1`) to auto-switch snapshot mode to archive mode when hard links are unavailable.
+- Extended `doctor` output with backup-target hard-link support diagnostics.
+- Updated documentation for SMB/NAS targets without hard-link support.
+
 ## [0.1.2] - 2026-03-04
 
 ### Fixed

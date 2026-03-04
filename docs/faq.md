@@ -24,3 +24,7 @@ Yes. Use CLI subcommands (`backup`, `restore`, `list-*`, `doctor`) and not the m
 ## How many backups are kept?
 
 Controlled by `--keep` or `KEEP_DEFAULT`. Rotation applies per VM across snapshot and archive backups.
+
+## Why did I get an archive backup although I requested snapshot mode?
+
+Your backup target likely does not support hard links. In that case, UTM TimeVault defaults to `HARDLINK_AUTO_FALLBACK=1` and switches to archive mode automatically.

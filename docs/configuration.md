@@ -41,6 +41,7 @@
 - `RSYNC_SNAPSHOT_CHECKSUM` (`0` or `1`)
 - `UTM_STOP_TIMEOUT_SEC`
 - `UTM_STOP_POLL_INTERVAL_SEC`
+- `HARDLINK_AUTO_FALLBACK` (`1` default, `0` to only warn and keep snapshot mode)
 
 ## Defaults
 

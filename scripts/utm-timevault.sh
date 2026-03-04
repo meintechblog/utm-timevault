@@ -232,6 +232,57 @@ human_size_path() {
   fi
 }
 
+human_size_bytes() {
+  local bytes="${1:-0}"
+  case "$bytes" in
+    ''|*[!0-9]*) bytes=0 ;;
+  esac
+  awk -v b="$bytes" 'BEGIN {
+    split("B KiB MiB GiB TiB PiB", u, " ")
+    i = 1
+    while (b >= 1024 && i < 6) {
+      b = b / 1024
+      i++
+    }
+    if (i == 1) {
+      printf "%.0f%s", b, u[i]
+    } else {
+      printf "%.2f%s", b, u[i]
+    }
+  }'
+}
+
+path_size_bytes() {
+  local p="$1"
+  if [ -d "$p" ]; then
+    dir_size_bytes "$p"
+  else
+    file_size_bytes "$p"
+  fi
+}
+
+vm_backup_inventory_stats() {
+  local vm="$1"
+  local files f count total size_bytes
+  files="$(collect_vm_backups_sorted "$vm" || true)"
+  count=0
+  total=0
+
+  if [ -n "$files" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      count=$((count+1))
+      size_bytes="$(path_size_bytes "$f")"
+      case "$size_bytes" in
+        ''|*[!0-9]*) size_bytes=0 ;;
+      esac
+      total=$((total + size_bytes))
+    done <<< "$files"
+  fi
+
+  printf "%s\t%s\n" "$count" "$total"
+}
+
 rsync_progress_option() {
   if rsync --help 2>/dev/null | grep -q -- '--info'; then
     echo "--info=progress2"
@@ -992,7 +1043,7 @@ do_restore_for_vm_and_source() {
 }
 
 do_backup_interactive() {
-  local vm keep_in keep rc
+  local vm keep_in keep rc existing_count existing_total_bytes
 
   if vm="$(pick_vm_interactive)"; then
     :
@@ -1004,6 +1055,9 @@ do_backup_interactive() {
     fi
     return "$rc"
   fi
+
+  IFS=$'\t' read -r existing_count existing_total_bytes < <(vm_backup_inventory_stats "$vm")
+  info "Existing backups for '$vm': ${existing_count:-0} (total: $(human_size_bytes "${existing_total_bytes:-0}"))."
 
   keep="$KEEP_DEFAULT"
   if ! read -r -p "How many backups to keep? [$KEEP_DEFAULT]: " keep_in; then
